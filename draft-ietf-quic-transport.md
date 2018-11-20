@@ -2678,6 +2678,7 @@ frames are explained in more detail in {{frame-formats}}.
 | 0x1a        | PATH_CHALLENGE       | {{frame-path-challenge}}       |
 | 0x1b        | PATH_RESPONSE        | {{frame-path-response}}        |
 | 0x1c - 0x1d | CONNECTION_CLOSE     | {{frame-connection-close}}     |
+| 0x1e        | ACK_FREQUENCY        | {{frame-ack-frequency}}        |
 {: #frame-types title="Frame Types"}
 
 All QUIC frames are idempotent.  That is, a valid frame does not cause
@@ -2740,14 +2741,16 @@ packet.
 expectations about what implementations do with packets that have errors after
 valid frames? -->
 
-### Sending ACK Frames
+### Sending ACK Frames {#sending-ack-frames}
 
 <!-- TODO: Re-read this section for flow and redundancy. -->
 
 To avoid creating an indefinite feedback loop, an endpoint MUST NOT send an ACK
 frame in response to a packet containing only ACK or PADDING frames, even if
-there are packet gaps which precede the received packet.  The endpoint MUST
-however acknowledge packets containing only ACK or PADDING frames when sending
+there are packet gaps which precede the received packet.  When delaying
+acknowledgements, an endpoint MUST NOT count packets containing only ACK or
+PADDING frames towards triggering a delayed acknowledgement.  An endpoint MUST
+acknowledge packets containing only ACK or PADDING frames however when sending
 ACK frames in response to other packets.
 
 Packets containing PADDING frames are considered
@@ -2761,14 +2764,26 @@ receiver.
 An endpoint MUST NOT send more than one packet containing only an ACK frame per
 received packet that contains frames other than ACK and PADDING frames.
 
+A sender uses an ACK_FREQUENCY frame to indicate the number of packets that the
+receiver should receive before sending an acknowledgement
+({{frame-ack-frequency}}).  The value indicates how often the receiver should
+send an ACK frame.  On receiving this value, a receiver SHOULD then wait to
+receive those many packets for every ACK frame that it sends, subject to a
+delayed acknowledgement timer.
+
+A receiver MAY send an ACK frame less frequently, which can happen if packets
+are received in quick succession, or more frequently, which can happen if the
+delayed acknowledgement timer runs out before the requisite number of packets to
+trigger the acknowledgement is received.
+
 The receiver's delayed acknowledgment timer SHOULD NOT exceed the current RTT
 estimate or the value it indicates in the `max_ack_delay` transport parameter.
 This ensures an acknowledgment is sent at least once per RTT when packets
 needing acknowledgement are received.  The sender can use the receiver's
 `max_ack_delay` value in determining timeouts for timer-based retransmission.
 
-Strategies and implications of the frequency of generating acknowledgments are
-discussed in more detail in {{QUIC-RECOVERY}}.
+Further strategies and implications of the frequency of generating
+acknowledgments are discussed in more detail in {{QUIC-RECOVERY}}.
 
 To limit ACK Blocks to those that have not yet been received by the sender, the
 receiver SHOULD track which ACK frames have been acknowledged by its peer.  Once
@@ -2868,6 +2883,13 @@ containing that information is acknowledged.
   the most recent frame for a scope is lost, but only while the endpoint is
   blocked on the corresponding limit. These frames always include the limit that
   is causing blocking at the time that they are transmitted.
+
+* The current desired acknowledgement frequency is sent in ACK_FREQUENCY frames.
+  An updated value is sent in an ACK_FREQUENCY frame if the packet containing
+  the most recently sent ACK_FREQUENCY frame is declared lost, or when the
+  endpoint decides to update the value.  Care should be taken to avoid updating
+  this value and sending ACK_FREQUENCY frames more than once per round-trip
+  time.
 
 * A liveness or path validation check using PATH_CHALLENGE frames is sent
   periodically until a matching PATH_RESPONSE frame is received or until there
@@ -4872,6 +4894,37 @@ Reason Phrase:
 : A human-readable explanation for why the connection was closed.  This can be
   zero length if the sender chooses to not give details beyond the Error Code.
   This SHOULD be a UTF-8 encoded string {{!RFC3629}}.
+
+
+## ACK_FREQUENCY Frame {#frame-ack-frequency}
+
+The ACK_FREQUENCY frame (type=0x1e) is used by a sender to indicate the number
+of packets that the receiver should wait to receive before sending an
+acknowledgement.
+
+The ACK_FREQUENCY frame is as follows:
+
+~~~
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                     Number of Packets (i)                   ...
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+~~~
+
+ACK_FREQUENCY frames contain the following field:
+
+Number of Packets:
+
+: A variable-length integer indicating the number of packets that a receiver
+  should wait to receive before sending an acknowledgement.
+
+A receiver that is delaying acknowledgements does not count packets containing
+only ACK or PADDING frames towards this value.  As stated in
+{{sending-ack-frames}}, a receiver cannot send more than one packet containing
+only an ACK frame per received packet containing frames other than ACK and
+PADDING frames.  As a result, a receiver responds identically to receiving a
+value of 0 or 1 in the Number of Packets field.
 
 
 ## Extension Frames
