@@ -389,8 +389,7 @@ timer for TCP as well, and this document incorporates this advancement.
 
 Timeout loss detection recovers from losses that cannot be handled by
 ack-based loss detection.  It uses a single timer which switches between
-a crypto retransmission timer, a Tail Loss Probe timer and Retransmission
-Timeout mechanisms.
+a crypto retransmission timer and a Probe timer.
 
 ### Crypto Retransmission Timeout
 
